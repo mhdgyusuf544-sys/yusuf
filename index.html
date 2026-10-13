@@ -97,15 +97,24 @@ function persistNotes(){localStorage.setItem('kp_notes',JSON.stringify(notes));r
 function openNote(id){const n=notes.find(x=>x.id===id);if(!n)return;$('subject').value=n.title;$('transcript').value=n.transcript;currentMaterial=n.material;currentTitle=n.title;showMaterial(n.material);showView('home');toast('Catatan dibuka')}
 function formatMaterial(text){
  const escapeHtml=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
- const inlineFormat=s=>escapeHtml(s).replace(/\\*\\*(.+?)\\*\\*/g,'<strong>$1</strong>').replace(/\\*(.+?)\\*/g,'<em>$1</em>').replace(/`([^`]+)`/g,'<code>$1</code>');
- const lines=String(text||'').replace(/\\r/g,'').split('\\n');let html='',listType=null;
+ const inlineFormat=s=>escapeHtml(s).replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/\*(.+?)\*/g,'<em>$1</em>');
+ const lines=String(text||'').replace(/\r/g,'').split('\n');
+ let html='',listType=null;
  const closeList=()=>{if(listType){html+='</'+listType+'>';listType=null}};
- for(const line of lines){const t=line.trim();if(!t){closeList();continue}if(/^(={3,}|-{3,}|_{3,})$/.test(t))continue;
- let heading=t.match(/^#{1,3}\\s+(.+)$/);if(!heading&&t.length<85&&/^[A-Z0-9][A-Z0-9 /&(),:—–-]{3,}$/.test(t)&&/[A-Z]/.test(t))heading=[t,t.replace(/^\\d+[.)]?\\s*/,'')];
- if(heading){closeList();html+='<h2>'+inlineFormat(heading[1].replace(/^\\d+[.)]?\\s*/,''))+'</h2>';continue}
- const numbered=t.match(/^(?:[-*•]\\s+|\\d+[.)]\\s+)(.*)$/);if(numbered){const wanted=/^\\d+[.)]\\s+/.test(t)?'ol':'ul';if(listType!==wanted){closeList();listType=wanted;html+='<'+wanted+'>'}html+='<li>'+inlineFormat(numbered[1])+'</li>';continue}
- closeList();if(/^>\\s?/.test(t)){html+='<blockquote>'+inlineFormat(t.replace(/^>\\s?/,''))+'</blockquote>';continue}html+='<p>'+inlineFormat(t)+'</p>';
- }closeList();return '<div class="material-content">'+html+'</div>';
+ for(const line of lines){
+  const t=line.trim();
+  if(!t){closeList();continue}
+  if(/^(={3,}|_{3,})$/.test(t)||/^-{3,}$/.test(t))continue;
+  let heading=t.match(/^#{1,3}\s+(.+)$/);
+  if(!heading&&t.length<85&&/^[A-Z0-9][A-Z0-9 /&(),:—–-]{3,}$/.test(t)&&/[A-Z]/.test(t))heading=[t,t.replace(/^\d+[.)]?\s*/,'')];
+  if(heading){closeList();html+='<h2>'+inlineFormat(heading[1].replace(/^\d+[.)]?\s*/,''))+'</h2>';continue}
+  const numbered=t.match(/^(-\s+|[*•]\s+|\d+[.)]\s+)(.*)$/);
+  if(numbered){const wanted=/^\d+[.)]\s+/.test(t)?'ol':'ul';if(listType!==wanted){closeList();listType=wanted;html+='<'+wanted+'>'}html+='<li>'+inlineFormat(numbered[2])+'</li>';continue}
+  closeList();
+  if(/^>\s?/.test(t)){html+='<blockquote>'+inlineFormat(t.replace(/^>\s?/,''))+'</blockquote>';continue}
+  html+='<p>'+inlineFormat(t)+'</p>';
+ }
+ closeList();return '<div class="material-content">'+html+'</div>';
 }
 function showMaterial(text){currentMaterial=text;$('output').classList.remove('empty');$('output').innerHTML=formatMaterial(text)}
 function showView(view){document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('active',b.dataset.view===view));$('hero').classList.toggle('hidden',view!=='home');$('capturePanel').classList.toggle('hidden',view!=='home');$('resultPanel').classList.toggle('hidden',view!=='home');$('workspace').classList.remove('hidden');$('notesView').classList.toggle('hidden',view!=='notes');$('settingsView').classList.toggle('hidden',view!=='settings');if(view==='notes')renderAllNotes();window.scrollTo({top:0,behavior:'smooth'})}
