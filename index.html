@@ -58,6 +58,14 @@ html,body{width:100%;overflow-x:hidden}
     <div class="hero-main"><div class="eyebrow">YOUR PERSONAL LECTURE ASSISTANT</div><h2>Dari omongan dosen → jadi ilmu.</h2><p>Rekam suara dosen lewat browser HP, tempel transkrip, lalu susun jadi rangkuman, konsep penting, dan bahan belajar sederhana.</p><div class="hero-actions"><button class="btn primary" id="jumpRecord">＋ Mulai sesi belajar</button><button class="btn ghost" id="sampleBtn">Lihat contoh</button></div></div>
     <div class="hero-side"><div class="minihead"><span><span class="statusdot"></span>RUANG BELAJAR</span><span>PRIBADI</span></div><div class="statnum" id="noteCount">0</div><div class="statdesc">catatan tersimpan di perangkat ini</div><div class="meter"><span id="progressMeter"></span></div><p class="tiny">Tips: buat catatan setelah setiap topik, jangan tunggu sampai ujian.</p></div>
   </section>
+  <section class="panel" id="pptPanel" style="margin-bottom:18px">
+    <div class="panelhead"><div><h3>✦ Masukkan materi dari PowerPoint</h3><p>Upload PPTX, baca teks slide, lalu buat rangkuman dengan format materi belajar yang sama.</p></div><span class="tag">PPTX</span></div>
+    <label class="fieldlabel" for="pptFile">Pilih file PowerPoint (.pptx)</label>
+    <input id="pptFile" type="file" accept=".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation">
+    <div class="tiny" style="margin-top:8px">File .ppt lama perlu disimpan ulang sebagai .pptx. Teks di dalam gambar atau hasil scan tidak terbaca oleh fitur ini.</div>
+    <div class="tools"><button class="btn ghost" id="readPptBtn">Baca isi slide</button><button class="btn primary" id="summarizePptBtn">✦ Rangkum materi PPT</button></div>
+    <div class="notice hidden" id="pptStatus" role="status"></div>
+  </section>
   <section class="grid" id="workspace">
     <div class="panel" id="capturePanel">
       <div class="panelhead"><div><h3>01 / Tangkap penjelasan</h3><p>Gunakan mikrofon atau tempel teks hasil transkrip.</p></div><span class="tag">INPUT</span></div>
@@ -84,6 +92,7 @@ html,body{width:100%;overflow-x:hidden}
   <p class="bottomnote">KelasPaham · Dibuat untuk membantu belajar, bukan menggantikan materi resmi dosen. Periksa kembali istilah dan fakta penting.</p>
 </main>
 </div>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <script>
 const $=id=>document.getElementById(id);
 let currentMaterial='', currentTitle='Catatan kuliah', recognition=null, isRecording=false, notes=[];
@@ -179,6 +188,49 @@ async function makeGeminiMaterial(text,title){
  if(!answer)throw new Error('Gemini tidak mengembalikan teks.');
  return 'MATERI KULIAH: '+title+'\\n'+'='.repeat(42)+'\\n\\n'+answer+'\\n\\nCatatan: Cocokkan kembali rumus, angka, dan fakta penting dengan materi resmi dosen.';
 }
+
+async function extractPptxText(file){
+ if(!file)throw new Error('Pilih file PPTX terlebih dahulu.');
+ if(!/\.pptx$/i.test(file.name))throw new Error('Format yang didukung adalah .pptx. Simpan ulang file .ppt sebagai .pptx.');
+ if(file.size>30*1024*1024)throw new Error('Ukuran file maksimal 30 MB.');
+ if(typeof JSZip==='undefined')throw new Error('Modul pembaca PPTX belum termuat. Periksa koneksi internet lalu muat ulang halaman.');
+ const zip=await JSZip.loadAsync(file);
+ const paths=Object.keys(zip.files).filter(p=>/^ppt\/slides\/slide\d+\.xml$/.test(p)).sort((a,b)=>Number(a.match(/slide(\d+)/)[1])-Number(b.match(/slide(\d+)/)[1]));
+ if(!paths.length)throw new Error('Tidak ditemukan slide di file ini.');
+ const slides=[];
+ for(let i=0;i<paths.length;i++){
+  const xml=await zip.files[paths[i]].async('text');
+  const doc=new DOMParser().parseFromString(xml,'application/xml');
+  if(doc.querySelector('parsererror'))continue;
+  const paragraphs=[...doc.getElementsByTagNameNS('*','p')], lines=[];
+  for(const p of paragraphs){
+   const text=[...p.getElementsByTagNameNS('*','t')].map(n=>n.textContent||'').join('').trim();
+   if(text)lines.push(text);
+  }
+  const content=lines.join('\n').trim();
+  if(content)slides.push({number:i+1,text:content});
+ }
+ if(!slides.length)throw new Error('Teks tidak ditemukan. Mungkin slide hanya berisi gambar atau hasil scan.');
+ return {slides,text:slides.map(s=>'SLIDE '+s.number+'\n'+s.text).join('\n\n')};
+}
+async function handlePptx(summarize){
+ const file=$('pptFile').files[0],status=$('pptStatus');
+ status.classList.remove('hidden');status.textContent='Sedang membaca PowerPoint…';
+ const readBtn=$('readPptBtn'),sumBtn=$('summarizePptBtn');readBtn.disabled=true;sumBtn.disabled=true;
+ try{
+  const result=await extractPptxText(file);
+  const title=file.name.replace(/\.pptx$/i,'').replace(/[_-]+/g,' ').trim()||'Materi PowerPoint';
+  $('subject').value=title;$('transcript').value=result.text;
+  status.textContent='Berhasil membaca '+result.slides.length+' slide yang berisi teks ('+result.text.length+' karakter).';
+  if(summarize){showView('home');$('makeNotes').click();}
+  else{toast('Teks slide berhasil dimasukkan. Periksa teks atau tekan Rangkum materi PPT.');$('transcript').scrollIntoView({behavior:'smooth',block:'center'});}
+ }catch(e){status.textContent='Gagal membaca file: '+(e.message||'Terjadi kesalahan.');toast('Periksa format file dan koneksi internet.');}
+ finally{readBtn.disabled=false;sumBtn.disabled=false;}
+}
+$('readPptBtn').onclick=()=>handlePptx(false);
+$('summarizePptBtn').onclick=()=>handlePptx(true);
+$('pptFile').addEventListener('change',()=>{const f=$('pptFile').files[0];if(f){$('pptStatus').classList.remove('hidden');$('pptStatus').textContent='File dipilih: '+f.name;}});
+
 $('makeNotes').onclick=async()=>{const text=$('transcript').value.trim();if(!text){toast('Masukkan teks atau rekam suara terlebih dahulu.');return}const title=$('subject').value.trim()||'Catatan kuliah';currentTitle=title;const btn=$('makeNotes');btn.disabled=true;btn.textContent='Memproses materi…';try{const answer=await makeGeminiMaterial(text,title);if(answer){showMaterial(answer);toast('Materi dibuat oleh Gemini AI.')}else{showMaterial(localSummary(text,title));toast('API key belum diisi; memakai rangkuman lokal.')}}catch(e){showMaterial(localSummary(text,title));const msg=String(e.message||e);let hint='Gemini gagal. Memakai rangkuman lokal. ';if(/high demand|overload|busy|429|503|UNAVAILABLE|RESOURCE_EXHAUSTED/i.test(msg))hint='Gemini sedang sibuk atau kuota/rate limit tercapai. ';else if(/API key|API_KEY_INVALID|invalid argument|unauthenticated|401|403|permission/i.test(msg))hint='API key tidak valid, belum diizinkan, atau akses model ditolak. ';else if(/Failed to fetch|Koneksi/i.test(msg))hint='Koneksi ke Gemini gagal (bisa masalah jaringan/CORS). ';toast(hint+msg.slice(0,170))}finally{btn.disabled=false;btn.textContent='✦ Ubah jadi materi mudah'}};
 $('clearText').onclick=()=>{if(isRecording)recognition.stop();$('transcript').value='';$('subject').value='';currentMaterial='';$('output').classList.add('empty');$('output').innerHTML='<div><div style="font-size:30px;margin-bottom:8px">✧</div><b>Materi kamu akan muncul di sini</b><p class="tiny">Masukkan transkrip, lalu pilih “Ubah jadi materi mudah”.</p></div>'};
 $('copyBtn').onclick=async()=>{if(!currentMaterial){toast('Belum ada materi untuk disalin.');return}try{await navigator.clipboard.writeText(currentMaterial);toast('Materi disalin.')}catch(e){toast('Clipboard tidak tersedia di browser ini.')}};
