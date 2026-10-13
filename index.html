@@ -156,14 +156,30 @@ async function makeGeminiMaterial(text,title){
  const stylePrompt=style==='exam'?'Fokus pada persiapan ujian, definisi, perbedaan konsep, dan latihan.':style==='detailed'?'Jelaskan secara terstruktur dan mendalam.':'Pakai bahasa Indonesia sederhana yang mudah dipahami mahasiswa.';
  const lengthPrompt=length==='short'?'Buat ringkas dan padat.':length==='long'?'Buat lengkap dengan penjelasan dan keterkaitan konsep.':'Buat panjang sedang dengan detail yang cukup.';
  const prompt='Kamu tutor kuliah dan editor materi akademik. Ubah transkrip dosen menjadi modul belajar yang rapi, akurat, dan mudah dipelajari ulang. '+stylePrompt+' '+lengthPrompt+' Jangan mengarang fakta di luar transkrip; jika informasi tidak tersedia, tulis bahwa tidak disebutkan. KELUARKAN TEKS DENGAN FORMAT MARKDOWN KONSISTEN: judul bagian gunakan heading ##; subbagian gunakan ###; isi berupa paragraf pendek; poin gunakan bullet -; langkah berurutan gunakan 1., 2., 3.; tebalkan istilah penting dengan **istilah**. Hindari paragraf terlalu panjang. Susun: ## 1. Ringkasan Utama, ## 2. Penjelasan Sederhana, ## 3. Konsep dan Istilah Penting, ## 4. Proses atau Rumus (jika ada), ## 5. Contoh dari Transkrip (jika ada), ## 6. Hal Penting untuk Diingat, ## 7. Latihan dan Jawaban (5 pertanyaan dengan jawaban singkat), ## 8. Bagian yang Perlu Dikonfirmasi. Untuk bagian yang tidak relevan, tulis satu kalimat singkat tanpa mengarang. Gunakan bahasa Indonesia natural.\\nTopik: '+title+'\\n\\nTRANSKRIP DOSEN:\\n'+text;
- const response=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(model)+':generateContent',{method:'POST',headers:{'Content-Type':'application/json','X-goog-api-key':key},body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{temperature:0.3,maxOutputTokens:5000}})});
- const data=await response.json();
- if(!response.ok)throw new Error(data?.error?.message||('Gemini gagal ('+response.status+').'));
+ const models=[model,...(model==='gemini-2.5-flash'?['gemini-flash-latest']:['gemini-2.5-flash'])];
+ let data=null,response=null,lastError='';
+ for(let mi=0;mi<models.length;mi++){
+  const chosen=models[mi];
+  for(let attempt=0;attempt<2;attempt++){
+   try{
+    response=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(chosen)+':generateContent',{method:'POST',headers:{'Content-Type':'application/json','X-goog-api-key':key},body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{temperature:0.3,maxOutputTokens:5000}})});
+    data=await response.json();
+   }catch(err){lastError='Koneksi ke Gemini gagal. Periksa internet lalu coba lagi.';break}
+   if(response.ok)break;
+   lastError=data?.error?.message||('Gemini gagal ('+response.status+').');
+   const retryable=response.status===429||response.status===500||response.status===502||response.status===503||response.status===504;
+   if(!retryable)throw new Error(lastError);
+   if(attempt===0)await new Promise(resolve=>setTimeout(resolve,1200));
+  }
+  if(response&&response.ok)break;
+ }
+ if(!response||!response.ok)throw new Error(lastError||'Gemini sedang sibuk. Coba lagi beberapa saat.');
+
  const answer=(data.candidates||[]).flatMap(c=>c.content?.parts||[]).map(p=>p.text||'').join('\\n').trim();
  if(!answer)throw new Error('Gemini tidak mengembalikan teks.');
  return 'MATERI KULIAH: '+title+'\\n'+'='.repeat(42)+'\\n\\n'+answer+'\\n\\nCatatan: Cocokkan kembali rumus, angka, dan fakta penting dengan materi resmi dosen.';
 }
-$('makeNotes').onclick=async()=>{const text=$('transcript').value.trim();if(!text){toast('Masukkan teks atau rekam suara terlebih dahulu.');return}const title=$('subject').value.trim()||'Catatan kuliah';currentTitle=title;const btn=$('makeNotes');btn.disabled=true;btn.textContent='Memproses materi…';try{const answer=await makeGeminiMaterial(text,title);if(answer){showMaterial(answer);toast('Materi dibuat oleh Gemini AI.')}else{showMaterial(localSummary(text,title));toast('API key belum diisi; memakai rangkuman lokal.')}}catch(e){showMaterial(localSummary(text,title));toast('Gemini gagal: '+String(e.message||e).slice(0,100)+' — memakai rangkuman lokal.')}finally{btn.disabled=false;btn.textContent='✦ Ubah jadi materi mudah'}};
+$('makeNotes').onclick=async()=>{const text=$('transcript').value.trim();if(!text){toast('Masukkan teks atau rekam suara terlebih dahulu.');return}const title=$('subject').value.trim()||'Catatan kuliah';currentTitle=title;const btn=$('makeNotes');btn.disabled=true;btn.textContent='Memproses materi…';try{const answer=await makeGeminiMaterial(text,title);if(answer){showMaterial(answer);toast('Materi dibuat oleh Gemini AI.')}else{showMaterial(localSummary(text,title));toast('API key belum diisi; memakai rangkuman lokal.')}}catch(e){showMaterial(localSummary(text,title));const msg=String(e.message||e);toast((/high demand|overload|busy|429|503/i.test(msg)?'Gemini sedang ramai. Memakai rangkuman lokal; coba lagi sebentar.':'Gemini belum bisa digunakan. Memakai rangkuman lokal.'))}finally{btn.disabled=false;btn.textContent='✦ Ubah jadi materi mudah'}};
 $('clearText').onclick=()=>{if(isRecording)recognition.stop();$('transcript').value='';$('subject').value='';currentMaterial='';$('output').classList.add('empty');$('output').innerHTML='<div><div style="font-size:30px;margin-bottom:8px">✧</div><b>Materi kamu akan muncul di sini</b><p class="tiny">Masukkan transkrip, lalu pilih “Ubah jadi materi mudah”.</p></div>'};
 $('copyBtn').onclick=async()=>{if(!currentMaterial){toast('Belum ada materi untuk disalin.');return}try{await navigator.clipboard.writeText(currentMaterial);toast('Materi disalin.')}catch(e){toast('Clipboard tidak tersedia di browser ini.')}};
 $('saveBtn').onclick=()=>{if(!currentMaterial){toast('Buat materi terlebih dahulu.');return}const transcript=$('transcript').value.trim();const title=$('subject').value.trim()||currentTitle||'Catatan kuliah';notes.unshift({id:Date.now().toString(),title,transcript,material:currentMaterial,date:new Date().toLocaleString('id-ID')});persistNotes();toast('Catatan disimpan di perangkat ini.')};
