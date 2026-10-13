@@ -105,6 +105,7 @@ function renderAllNotes(){const el=$('allNotesList');if(!el)return;el.innerHTML=
 function persistNotes(){localStorage.setItem('kp_notes',JSON.stringify(notes));refreshNotes()}
 function openNote(id){const n=notes.find(x=>x.id===id);if(!n)return;$('subject').value=n.title;$('transcript').value=n.transcript;currentMaterial=n.material;currentTitle=n.title;showMaterial(n.material);showView('home');toast('Catatan dibuka')}
 function formatMaterial(text){
+ text=String(text||'').replace(/\\r/g,'').replace(/\\n/g,'\n').replace(/\\t/g,' ').replace(/[ \t]*={3,}[ \t]*/g,'\n\n').replace(/\n{3,}/g,'\n\n').trim();
  const escapeHtml=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
  const inlineFormat=s=>escapeHtml(s).replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/\*(.+?)\*/g,'<em>$1</em>');
  const lines=String(text||'').replace(/\r/g,'').split('\n');
@@ -125,7 +126,7 @@ function formatMaterial(text){
  }
  closeList();return '<div class="material-content">'+html+'</div>';
 }
-function showMaterial(text){currentMaterial=text;$('output').classList.remove('empty');$('output').innerHTML=formatMaterial(text)}
+function showMaterial(text){text=String(text||'').replace(/\\r/g,'').replace(/\\n/g,'\n').replace(/\\t/g,' ').replace(/[ \t]*={3,}[ \t]*/g,'\n\n').replace(/\n{3,}/g,'\n\n').trim();currentMaterial=text;$('output').classList.remove('empty');$('output').innerHTML=formatMaterial(text)}
 function showView(view){document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('active',b.dataset.view===view));$('hero').classList.toggle('hidden',view!=='home');$('capturePanel').classList.toggle('hidden',view!=='home');$('resultPanel').classList.toggle('hidden',view!=='home');$('workspace').classList.remove('hidden');$('notesView').classList.toggle('hidden',view!=='notes');$('settingsView').classList.toggle('hidden',view!=='settings');if(view==='notes')renderAllNotes();window.scrollTo({top:0,behavior:'smooth'})}
 document.querySelectorAll('.nav').forEach(b=>b.onclick=()=>showView(b.dataset.view));
 $('jumpRecord').onclick=()=>{$('capturePanel').scrollIntoView({behavior:'smooth',block:'start'});setTimeout(()=>startRecording(),400)};
